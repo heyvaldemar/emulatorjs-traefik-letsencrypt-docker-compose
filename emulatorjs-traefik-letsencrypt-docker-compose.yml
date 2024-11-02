@@ -1,0 +1,175 @@
+# EmulatorJS with Let's Encrypt Using Docker Compose
+
+# The complete installation guide is available on my website https://www.heyvaldemar.com/install-emulatorjs-using-docker-compose/
+
+# Change variables in the `.env` to meet your requirements.
+# Note that the `.env` file and `roms` folder should be in the same directory as `emulatorjs-traefik-letsencrypt-docker-compose.yml`.
+
+# Create networks for your services before deploying the configuration using the commands:
+# `docker network create traefik-network`
+# `docker network create emulatorjs-network`
+
+# Deploy EmulatorJS using Docker Compose:
+# `docker compose -f emulatorjs-traefik-letsencrypt-docker-compose.yml -p emulatorjs up -d`
+
+# EmulatorJS Configuration Guide
+# Replace all instances of `http://emulatorjs.heyvaldemar.net` in this guide with your own domain specified in the `.env` file.
+# This setup uses Docker Compose for deployment, so ensure your domain is correctly configured there.
+# Since the app runs over HTTP on port 3000, it’s recommended to keep this port closed on your network hardware (e.g., router or firewall)
+# to restrict access to your internal network only. This helps prevent external access to the emulator’s configuration interface.
+
+# ## Steps
+# 1. **Download Default Fileset:**
+#    - Go to your configured URL (replace with your domain, e.g., `http://emulatorjs.heyvaldemar.net:3000` as specified in your `.env` file).
+#    - Click the **Download** button to download the default fileset. This may take a few moments.
+
+# 2. **ROM Management:**
+#    - Navigate to **ROM Management**.
+#    - You’ll see options for different consoles (e.g., `gbc`, `nes`).
+#    - Click **Scan** under each console to scan your ROMs. This will identify any ROM files you’ve added for each platform within the `roms` directory.
+
+# 3. **Config Management:**
+#    - After scanning, go to **Config Management** to verify your ROMs have been added.
+#    - Ensure that the ROM count is accurate and the scanned count reflects your available ROMs.
+
+# 4. **Download Artwork:**
+#    - In **Config Management**, under **Step 1**, click **Download All Available Art**. This will fetch artwork for your ROMs, enhancing the visual experience.
+
+# 5. **Add ROMs to Config:**
+#    - Click on **Add All ROMs to Config** to ensure that all scanned ROMs are now available within the emulator.
+
+# 6. **Play Games:**
+#    - Go to your main domain (replace with your domain, e.g., `https://emulatorjs.heyvaldemar.net`) to access the game library.
+#    - Select your desired console and game, then enjoy playing!
+
+# Author
+# I’m Vladimir Mikhalev, the Docker Captain, but my friends can call me Valdemar.
+# https://www.docker.com/captains/vladimir-mikhalev/
+
+# My website with detailed IT guides: https://www.heyvaldemar.com/
+# Follow me on YouTube: https://www.youtube.com/channel/UCf85kQ0u1sYTTTyKVpxrlyQ?sub_confirmation=1
+# Follow me on Twitter: https://twitter.com/heyValdemar
+# Follow me on Instagram: https://www.instagram.com/heyvaldemar/
+# Follow me on Threads: https://www.threads.net/@heyvaldemar
+# Follow me on Mastodon: https://mastodon.social/@heyvaldemar
+# Follow me on Bluesky: https://bsky.app/profile/heyvaldemar.bsky.social
+# Follow me on Facebook: https://www.facebook.com/heyValdemarFB/
+# Follow me on TikTok: https://www.tiktok.com/@heyvaldemar
+# Follow me on LinkedIn: https://www.linkedin.com/in/heyvaldemar/
+# Follow me on GitHub: https://github.com/heyvaldemar
+
+# Communication
+# Chat with IT pros on Discord: https://discord.gg/AJQGCCBcqf
+# Reach me at ask@sre.gg
+
+# Give Thanks
+# Support on GitHub: https://github.com/sponsors/heyValdemar
+# Support on Patreon: https://www.patreon.com/heyValdemar
+# Support on BuyMeaCoffee: https://www.buymeacoffee.com/heyValdemar
+# Support on Ko-fi: https://ko-fi.com/heyValdemar
+# Support on PayPal: https://www.paypal.com/paypalme/heyValdemarCOM
+
+networks:
+  emulatorjs-network:
+    external: true
+  traefik-network:
+    external: true
+
+volumes:
+  traefik-certificates:
+
+services:
+  emulatorjs:
+    image: ${EMULATORJS_IMAGE_TAG}
+    volumes:
+      - ./data:/data
+      - ./config:/config
+      - ./roms:/roms:ro
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: ${EMULATORJS_HTIMEZONE}
+    networks:
+      - emulatorjs-network
+      - traefik-network
+    healthcheck:
+      test: timeout 10s bash -c ':> /dev/tcp/127.0.0.1/80' || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.emulatorjs.rule=Host(`${EMULATORJS_HOSTNAME}`)"
+      - "traefik.http.routers.emulatorjs.service=emulatorjs"
+      - "traefik.http.routers.emulatorjs.entrypoints=websecure"
+      - "traefik.http.services.emulatorjs.loadbalancer.server.port=80"
+      - "traefik.http.routers.emulatorjs.tls=true"
+      - "traefik.http.routers.emulatorjs.tls.certresolver=letsencrypt"
+      - "traefik.http.services.emulatorjs.loadbalancer.passhostheader=true"
+      - "traefik.http.routers.emulatorjs.middlewares=compresstraefik"
+      - "traefik.http.middlewares.compresstraefik.compress=true"
+      - "traefik.tcp.routers.rom-artwork.rule=HostSNI(`*`)"
+      - "traefik.tcp.routers.rom-artwork.service=rom-artwork"
+      - "traefik.tcp.routers.rom-artwork.entrypoints=artwork"
+      - "traefik.tcp.services.rom-artwork.loadbalancer.server.port=3000"
+      - "traefik.docker.network=traefik-network"
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+
+  traefik:
+    image: ${TRAEFIK_IMAGE_TAG}
+    command:
+      - "--log.level=${TRAEFIK_LOG_LEVEL}"
+      - "--accesslog=true"
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--ping=true"
+      - "--ping.entrypoint=ping"
+      - "--entryPoints.ping.address=:8082"
+      - "--entryPoints.web.address=:80"
+      - "--entryPoints.websecure.address=:443"
+      - "--entryPoints.artwork.address=:3000"
+      - "--providers.docker=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedByDefault=false"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${TRAEFIK_ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json"
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.buckets=0.1,0.3,1.2,5.0"
+      - "--global.checkNewVersion=true"
+      - "--global.sendAnonymousUsage=false"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - traefik-certificates:/etc/traefik/acme
+    networks:
+      - traefik-network
+    ports:
+      - "80:80"
+      - "443:443"
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "http://localhost:8082/ping","--spider"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`${TRAEFIK_HOSTNAME}`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=8080"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.services.dashboard.loadbalancer.passhostheader=true"
+      - "traefik.http.routers.dashboard.middlewares=authtraefik"
+      - "traefik.http.middlewares.authtraefik.basicauth.users=${TRAEFIK_BASIC_AUTH}"
+      - "traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)"
+      - "traefik.http.routers.http-catchall.entrypoints=web"
+      - "traefik.http.routers.http-catchall.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+    restart: unless-stopped
